@@ -118,6 +118,8 @@ Frontend will run at:
 
 #  Connecting Frontend & Backend
 
+ignore this for now
+
 Make sure your frontend `.env` contains something like:
 
 ```
