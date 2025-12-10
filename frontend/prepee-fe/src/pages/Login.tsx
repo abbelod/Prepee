@@ -54,12 +54,17 @@ export default function Login() {
 
       if (response.ok) {
         // Store the authentication token (adjust based on your API response)
-        if (data.token) {
-          localStorage.setItem('authToken', data.token);
-        }
+        // if (data.token) {
+        //   localStorage.setItem('authToken', data.token);
+        // }
+
         // Or if your API returns access and refresh tokens:
-        // localStorage.setItem('accessToken', data.access);
-        // localStorage.setItem('refreshToken', data.refresh);
+        if(data.access){
+          localStorage.setItem('accessToken', data.access);
+        }
+        if(data.refresh){
+          localStorage.setItem('refreshToken', data.refresh);
+        }
 
         // Store user data if needed
         if (data.user) {

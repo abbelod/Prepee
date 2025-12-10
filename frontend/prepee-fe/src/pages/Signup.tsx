@@ -5,11 +5,15 @@ import './Auth.css';
 export default function Signup() {
   const navigate = useNavigate();
   const [name, setName] = useState('');
+  const [username, setUsername] = useState('');
   const [email, setEmail] = useState('');
+  const [city, setCity] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [errors, setErrors] = useState<{
     name?: string;
+    username?: string;
+    city?: string;
     email?: string;
     password?: string;
     confirmPassword?: string;
@@ -20,6 +24,8 @@ export default function Signup() {
   const validateForm = () => {
     const newErrors: {
       name?: string;
+      username?: string;
+      city?: string;
       email?: string;
       password?: string;
       confirmPassword?: string;
@@ -29,6 +35,18 @@ export default function Signup() {
       newErrors.name = 'Name is required';
     } else if (name.trim().length < 2) {
       newErrors.name = 'Name must be at least 2 characters';
+    }
+
+    if (!username.trim()) {
+      newErrors.username = 'Username is required';
+    } else if (username.trim().length < 3) {
+      newErrors.username = 'Username must be at least 3 characters';
+    }
+
+    if (!city.trim()) {
+      newErrors.city = 'City is required';
+    } else if (city.trim().length < 2) {
+      newErrors.city = 'City must be at least 2 characters';
     }
 
     if (!email) {
@@ -70,8 +88,9 @@ export default function Signup() {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          username: email, // Using email as username, or you can create a separate username field
+          username,
           email: email,
+          city,
           password: password,
           password2: confirmPassword,
         }),
@@ -80,18 +99,17 @@ export default function Signup() {
       const data = await response.json();
 
       if (response.ok) {
-        // Optional: Store the token if the API returns one immediately after signup
-        if (data.token) {
-          localStorage.setItem('authToken', data.token);
-        }
-        // Or if your API returns access and refresh tokens:
-        // localStorage.setItem('accessToken', data.access);
-        // localStorage.setItem('refreshToken', data.refresh);
+        // if(data.access) {
+        //   localStorage.setItem('accessToken', data.access)
+        // }
+        // if(data.refresh) {
+        //   localStorage.setItem('refreshToken', data.refresh)
+        // }
 
-        // Store user data if needed
-        if (data.user) {
-          localStorage.setItem('user', JSON.stringify(data.user));
-        }
+        // // Store user data if needed
+        // if (data.user) {
+        //   localStorage.setItem('user', JSON.stringify(data.user));
+        // }
 
         // Navigate to login page or home page based on your flow
         // If API returns token, go to home:
@@ -105,17 +123,22 @@ export default function Signup() {
         // Handle error responses from Django REST Framework
         const newErrors: {
           name?: string;
+          username?: string;
           email?: string;
+          city?: string;
           password?: string;
           confirmPassword?: string;
           general?: string;
         } = {};
 
         if (data.username) {
-          newErrors.name = Array.isArray(data.username) ? data.username[0] : data.username;
+          newErrors.username = Array.isArray(data.username) ? data.username[0] : data.username;
         }
         if (data.email) {
           newErrors.email = Array.isArray(data.email) ? data.email[0] : data.email;
+        }
+        if (data.city) {
+          newErrors.city = Array.isArray(data.city) ? data.city[0] : data.city;
         }
         if (data.password) {
           newErrors.password = Array.isArray(data.password) ? data.password[0] : data.password;
@@ -181,6 +204,22 @@ export default function Signup() {
           </div>
 
           <div className="form-group">
+            <label htmlFor="signup-username" className="form-label">
+              Username
+            </label>
+            <input
+              id="signup-username"
+              type="text"
+              className={`form-input ${errors.username ? 'form-input-error' : ''}`}
+              placeholder="Choose a username"
+              value={username}
+              onChange={(e) => setUsername(e.target.value)}
+              disabled={isLoading}
+            />
+            {errors.username && <span className="error-message">{errors.username}</span>}
+          </div>
+
+          <div className="form-group">
             <label htmlFor="signup-email" className="form-label">
               Email Address
             </label>
@@ -194,6 +233,22 @@ export default function Signup() {
               disabled={isLoading}
             />
             {errors.email && <span className="error-message">{errors.email}</span>}
+          </div>
+
+          <div className="form-group">
+            <label htmlFor="signup-city" className="form-label">
+              City
+            </label>
+            <input
+              id="signup-city"
+              type="text"
+              className={`form-input ${errors.city ? 'form-input-error' : ''}`}
+              placeholder="Enter your city"
+              value={city}
+              onChange={(e) => setCity(e.target.value)}
+              disabled={isLoading}
+            />
+            {errors.city && <span className="error-message">{errors.city}</span>}
           </div>
 
           <div className="form-group">

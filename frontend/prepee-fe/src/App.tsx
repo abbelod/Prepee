@@ -19,16 +19,102 @@ function HomePage() {
   const navigate = useNavigate();
   const [selectedCategory, setSelectedCategory] = useState<(typeof quizCategories)[number]['title']>(quizCategories[0].title);
   const [selectedTime, setSelectedTime] = useState<(typeof timeControls)[number]>('10 min');
+  const [isSearching, setIsSearching] = useState(false);
 
+
+  const POLL_INTERVAL = 2000; // 2 seconds
+  let pollingTimer: number;
+  
+  interface MatchResponse {
+    status: "matched" | "waiting";
+    match_id?: number;
+    opponentName?: string;
+    opponentCity?: string;
+    questions?: any;
+  }
+  
+  const handleStartMatch = async (): Promise<void> => {
+    setIsSearching(true);
+  
+    const token = localStorage.getItem("accessToken");
+    if (!token) {
+      console.error("No access token found");
+      setIsSearching(false);
+      return;
+    }
+  
+    const poll = async () => {
+      try {
+        const response = await fetch("http://localhost:8000/matchmaking/find/", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify({
+            category: selectedCategory,
+            timeControl: selectedTime,
+          }),
+        });
+  
+        if (!response.ok) {
+          console.error("Failed to check match", response.statusText);
+          setIsSearching(false);
+          if (pollingTimer) clearInterval(pollingTimer);
+          return;
+        }
+  
+        const data: MatchResponse = await response.json();
+        console.log("Polling response:", data);
+  
+        if (data.status === "matched" && data.match_id) {
+          if (pollingTimer) clearInterval(pollingTimer);
+  
+          navigate("/quiz", {
+            state: {
+              matchId: data.match_id,
+              opponentName: data.opponentName,
+              opponentCity: data.opponentCity,
+              questions: data.questions,
+              timeControl: selectedTime,
+            },
+          });
+        } else {
+          console.log("Still waiting...");
+        }
+      } catch (error) {
+        console.error("Error during polling:", error);
+        setIsSearching(false);
+        if (pollingTimer) clearInterval(pollingTimer);
+      }
+    };
+  
+    // Start immediately
+    poll();
+    pollingTimer = setInterval(poll, POLL_INTERVAL);
+  };
+
+  
   return (
     <div className="min-h-screen bg-slate-950 text-white">
+      {/* Loading Overlay */}
+      {isSearching && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/90 backdrop-blur-sm">
+          <div className="flex flex-col items-center gap-4">
+            {/* Spinning Circle */}
+            <div className="h-16 w-16 animate-spin rounded-full border-4 border-indigo-500 border-t-transparent"></div>
+            <p className="text-lg font-medium text-white">Finding a match...</p>
+          </div>
+        </div>
+      )}
+
       <header className="sticky top-0 z-40 border-b border-white/10 bg-slate-950/80 backdrop-blur">
         <div className="mx-auto flex max-w-6xl items-center justify-between px-4 py-4">
           <div className="flex items-center gap-2 text-xl font-semibold tracking-tight">
             <span className="inline-flex h-10 w-10 items-center justify-center rounded-xl bg-indigo-500/20 text-2xl text-indigo-300">
               ⚡
             </span>
-            PrePee Quiz
+            Prepee Quiz
           </div>
           <nav className="hidden items-center gap-6 text-sm font-medium text-slate-200 md:flex">
             <button 
@@ -104,7 +190,11 @@ function HomePage() {
                 </span>
               </div>
             </div>
-            <button className="w-full max-w-xs rounded-2xl bg-indigo-500 px-6 py-3 text-sm font-semibold uppercase tracking-wide text-white shadow-xl shadow-indigo-500/30 transition hover:bg-indigo-400">
+            <button 
+              className="w-full max-w-xs rounded-2xl bg-indigo-500 px-6 py-3 text-sm font-semibold uppercase tracking-wide text-white shadow-xl shadow-indigo-500/30 transition hover:bg-indigo-400 disabled:opacity-50 disabled:cursor-not-allowed"
+              onClick={handleStartMatch}
+              disabled={isSearching}
+            >
               Start Match
             </button>
           </div>
