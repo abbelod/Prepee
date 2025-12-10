@@ -61,7 +61,9 @@ export default function QuizPage() {
     winner?: string;
     you_won?: boolean;
     message?: string;
+    answers?: any;
   } | null>(null);
+  const [reviewAnswers, setReviewAnswers] = useState<Record<number, { correctAnswer?: string; explanation?: string }>>({});
   const pollTimerRef = useRef<number | null>(null);
 
   // Countdown states
@@ -69,6 +71,7 @@ export default function QuizPage() {
   const [countdownNumber, setCountdownNumber] = useState(3);
   const opponentName = matchData?.opponentName || 'Player';
   const opponentCity = matchData?.opponentCity || 'Unknown';
+  const reviewMode = submitStatus === 'completed';
 
   // Prefer questions from matchData; fall back to static list
   const questions = useMemo(() => matchData?.questions ?? quizQuestions, [matchData?.questions]);
@@ -108,8 +111,10 @@ export default function QuizPage() {
 
   const currentQuestion = questions[currentIndex];
   const isLastQuestion = currentIndex === questions.length - 1;
+  const currentAnswerMeta = reviewAnswers[currentQuestion.id] || {};
 
   const handleOptionSelect = (option: string) => {
+    if (reviewMode) return; // disable changes during review
     setSelectedOptions((prev) => ({ ...prev, [currentQuestion.id]: option }));
   };
 
@@ -134,6 +139,19 @@ export default function QuizPage() {
       time_taken: initialTimeSeconds - timeLeft,
     };
 
+    const processAnswerDetails = (answersPayload: any) => {
+      const result: Record<number, { correctAnswer?: string; explanation?: string }> = {};
+    
+      answersPayload.forEach((q:any) => {
+        const correctAnswer = q.options[q.answer]; // answer is the index
+        result[q.id] = {
+          correctAnswer,
+          explanation: q.explanation ?? undefined,
+        };
+      });
+    
+      return result;
+    };
     const postSubmission = async () => {
       setIsSubmitting(true);
       try {
@@ -188,7 +206,9 @@ export default function QuizPage() {
                   opponent_score: pollData.opponent_score,
                   winner: pollData.winner,
                   you_won: pollData.you_won,
+                  answers: pollData.answers,
                 });
+                setReviewAnswers(processAnswerDetails(pollData.answers));
                 setHasSubmitted(true);
                 setIsSubmitting(false);
               }
@@ -203,7 +223,9 @@ export default function QuizPage() {
             opponent_score: data.opponent_score,
             winner: data.winner,
             you_won: data.you_won,
+            answers: data.answers,
           });
+          setReviewAnswers(processAnswerDetails(data.answers));
           setHasSubmitted(true);
           setIsSubmitting(false);
         } else {
@@ -285,15 +307,25 @@ export default function QuizPage() {
           <div className="mt-6 space-y-3">
             {currentQuestion.options.map((option) => {
               const isSelected = selectedOptions[currentQuestion.id] === option;
+              const correctAnswer = currentAnswerMeta.correctAnswer;
+              const isCorrectOption = reviewMode && correctAnswer === option;
+              const isUserWrongSelection = reviewMode && isSelected && !isCorrectOption;
               return (
                 <button
                   key={option}
                   type="button"
                   onClick={() => handleOptionSelect(option)}
+                  disabled={reviewMode}
                   className={`w-full rounded-2xl border px-4 py-4 text-left text-base transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400 ${
-                    isSelected
-                      ? 'border-indigo-400 bg-indigo-500/20 text-white shadow-lg shadow-indigo-500/30'
-                      : 'border-white/10 bg-white/5 text-slate-200 hover:border-indigo-200/60 hover:bg-white/10'
+                    reviewMode
+                      ? isCorrectOption
+                        ? 'border-emerald-400 bg-emerald-500/20 text-white shadow-lg shadow-emerald-500/30'
+                        : isUserWrongSelection
+                          ? 'border-rose-400 bg-rose-500/10 text-white'
+                          : 'border-white/10 bg-white/5 text-slate-200'
+                      : isSelected
+                        ? 'border-indigo-400 bg-indigo-500/20 text-white shadow-lg shadow-indigo-500/30'
+                        : 'border-white/10 bg-white/5 text-slate-200 hover:border-indigo-200/60 hover:bg-white/10'
                   }`}
                 >
                   {option}
@@ -328,7 +360,7 @@ export default function QuizPage() {
                 type="button"
                 onClick={handleSubmit}
                 className="flex-1 rounded-2xl bg-emerald-500 px-4 py-3 text-sm font-semibold uppercase tracking-wide text-white shadow-lg shadow-emerald-500/30 transition hover:bg-emerald-400 disabled:cursor-not-allowed disabled:bg-slate-700"
-                disabled={hasSubmitted || isSubmitting}
+                disabled={hasSubmitted || isSubmitting || reviewMode}
               >
                 {isSubmitting ? 'Submitting...' : 'Submit Quiz'}
               </button>
@@ -359,6 +391,20 @@ export default function QuizPage() {
             <p className="mt-4 rounded-2xl border border-rose-400/40 bg-rose-400/10 px-4 py-3 text-sm text-rose-100">
               {submitResult?.message || 'Submission failed. Please try again.'}
             </p>
+          )}
+
+          {reviewMode && (
+            <div className="mt-6 rounded-2xl border border-indigo-400/40 bg-indigo-500/10 px-4 py-4 text-sm text-slate-100">
+              <p className="font-semibold text-white">Explanation</p>
+              <p className="mt-2 text-slate-200">
+                {currentAnswerMeta.explanation || 'No explanation provided.'}
+              </p>
+              {currentAnswerMeta.correctAnswer && (
+                <p className="mt-2 text-emerald-200">
+                  Correct answer: <span className="font-semibold text-white">{currentAnswerMeta.correctAnswer}</span>
+                </p>
+              )}
+            </div>
           )}
         </section>
       </main>

@@ -154,4 +154,5 @@ def process_quiz_submission(request, match_id):
         "opponent_score": opponent.score,
         "winner": mp.user.username if mp.is_winner else opponent.user.username,
         "you_won": mp.is_winner,
+        "answers": correct_answers
     })
