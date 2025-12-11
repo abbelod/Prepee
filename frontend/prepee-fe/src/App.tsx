@@ -162,7 +162,7 @@ function HomePage() {
             Ready, Set, Quiz
           </p>
           <h1 className="mt-4 text-4xl font-bold leading-tight text-white md:text-5xl">
-            Test Your Knowledge — Challenge Yourself
+            Smart Entry Test Preparation
           </h1>
           <p className="mx-auto mt-4 max-w-2xl text-base text-slate-300 md:text-lg">
             Pick a category, set your time control, and jump into a head-to-head knowledge match.

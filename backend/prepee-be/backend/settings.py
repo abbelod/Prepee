@@ -62,6 +62,7 @@ INSTALLED_APPS = [
     'matchmaking',
     'rest_framework',
     'corsheaders',
+    'leaderboards',
 ]
 
 MIDDLEWARE = [

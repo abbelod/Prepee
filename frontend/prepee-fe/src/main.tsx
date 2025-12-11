@@ -8,18 +8,20 @@ import Login from './pages/Login.tsx';
 import Signup from './pages/Signup.tsx';
 import AboutPage from './pages/AboutPage.tsx';
 import QuizPage from './pages/QuizPage.tsx';
+import LeaderboardPage from './pages/Leaderboard.tsx';
 
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <BrowserRouter>
-    <Routes>
-      <Route path="/"element={<App />} />
-      <Route path="/login"element={<Login />} />
-      <Route path="/signup"element={<Signup />} />
-      <Route path="/about"element={<AboutPage />} />
-      <Route path="/quiz"element={<QuizPage />} />
-    </Routes>
+      <Routes>
+        <Route path="/" element={<App />} />
+        <Route path="/login" element={<Login />} />
+        <Route path="/signup" element={<Signup />} />
+        <Route path="/about" element={<AboutPage />} />
+        <Route path="/quiz" element={<QuizPage />} />
+        <Route path="/leaderboard" element={<LeaderboardPage />} />
+      </Routes>
     </BrowserRouter>
   </StrictMode>,
 )

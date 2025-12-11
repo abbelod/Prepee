@@ -100,9 +100,10 @@ def find_match_for_user(user, category="general"):
     all_candidates_raw = redis_client.zrange(queue_key, 0, -1)
     print(all_candidates_raw)
 
-    # 1 Check if user is already matched
+    # 1 Check if user is already matched by the matchmaker job
     match_id = redis_client.get(user_match_key)
     if match_id:
+        redis_client.delete(user_match_key) # Remove because it is no longer needed
         print("User already matched")
         match_id = int(match_id)
         match = Match.objects.get(id=match_id)
@@ -116,19 +117,10 @@ def find_match_for_user(user, category="general"):
                 print(opponent.username)
 
 
-        # Retrieve or create question set
-        if match.questions:
-            questions = json.loads(match.questions)
-        else:
-            questions = SAMPLE_QUESTIONS
-            # questions = generate_questions_for_match(match)
-            match.questions = json.dumps(questions)
-            match.save()
-
         return {
             "status": "matched",
             "match_id": match_id,
-            "questions": questions,
+            "questions": match.questions,
             "opponentName": opponent.username,
             "opponentCity": opponent.city,
             "timeControl": match.time_control

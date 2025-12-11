@@ -7,6 +7,8 @@ from django_redis import get_redis_connection
 from .models import Match, MatchPlayer
 import json
 
+
+redis= get_redis_connection("default")
 # Create your views here.
 
 @api_view(['POST'])
@@ -14,6 +16,7 @@ import json
 def find_match(request):
     user = request.user
     category = request.data.get("category", "general")
+    print(f"User requested match for category: {category}")
 
     result = find_match_for_user(user, category)
 
@@ -79,7 +82,8 @@ def process_quiz_submission(request, match_id):
         mp.time_taken = float(time_taken)
         mp.submitted = True
 
-        correct_answers = json.loads(match.questions)  # stored as JSON in Match model
+        # correct_answers = json.loads(match.questions)  # stored as JSON in Match model
+        correct_answers = match.questions # stored as JSON in Match model
         def calculate_score(submission_dict):
             """
             submission_dict: { question_id: selected_option_index }
@@ -101,7 +105,7 @@ def process_quiz_submission(request, match_id):
         mp.save()
         print(f"{request.user.username} submitted answers: {submission} score:{mp.score}")
 
-    # If already submitted, check for opponents submission status 
+    # Check for opponents submission status 
 
     # 2. Get opponent MatchPlayer
     opponent = MatchPlayer.objects.filter(match=match).exclude(user=request.user).first()
@@ -140,12 +144,46 @@ def process_quiz_submission(request, match_id):
     mp.save()
     opponent.save()
 
+    # Remove entries from redis 
+    keys = [f"user_match:{mp.user.id}", f"user_match:{opponent.user.id}"]
+    redis.delete(*keys)
+
     # 5. Mark match complete
     match.is_completed = True
     match.save()
 
     # 6. Optional ELO update
-    # update_elo(mp, opponent)
+    def update_elo(mp, opponent):
+        R_a = mp.user.elo
+        R_b = opponent.user.elo
+        K = 32
+
+        # If draw, score =0.5 for both players
+        if mp.is_winner == False and opponent.is_winner == False:
+            S_a = 0.5
+            S_b = 0.5
+        
+        elif mp.is_winner == True:
+            S_a = 1
+            S_b = 0
+        else:
+            S_b = 1
+            S_a = 0
+        
+        E_a = 1 / (1 + 10 ** ((R_b-R_a)/400))
+        E_b = 1 / (1 + 10 ** ((R_a-R_b)/400))
+
+        mp.user.elo = round(mp.user.elo + K*(S_a - E_a))
+        opponent.user.elo = round(opponent.user.elo + K*(S_b - E_b))
+
+        print("new mp elo:", mp.user.elo)
+        print("new opponenet elo:", opponent.user.elo)
+        mp.user.save()
+        opponent.user.save()
+
+    # Update elo of both players
+    update_elo(mp, opponent)
+        
 
     # 7. Return result to frontend
     return Response({

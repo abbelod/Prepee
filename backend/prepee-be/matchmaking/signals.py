@@ -2,6 +2,7 @@ from django.db.models.signals import post_save
 from django.dispatch import receiver
 from .models import Match
 # from .quiz_generator import generate_questions   # your quiz logic
+from .sample_q import SAMPLE_QUESTIONS_BIO, SAMPLE_QUESTIONS_CHEM, SAMPLE_QUESTIONS_ECAT, SAMPLE_QUESTIONS_ENG, SAMPLE_QUESTIONS_LOGIC, SAMPLE_QUESTIONS_MATH, SAMPLE_QUESTIONS_MCAT, SAMPLE_QUESTIONS_PHY
 
 SAMPLE_QUESTIONS = [
     {
@@ -77,16 +78,40 @@ SAMPLE_QUESTIONS = [
 ]
 
 
+
 @receiver(post_save, sender=Match)
 def add_quiz_to_match(sender, instance, created, **kwargs):
-    if not created:
-        return  # only run when match is first created
 
+    if instance.questions is not None:
+        return
+    
     print(f"[SIGNAL] Generating quiz for Match {instance.id}")
 
+    if(instance.category == 'Biology'):
+        questions = SAMPLE_QUESTIONS_BIO
+    elif(instance.category == 'Mathematics'):
+        questions = SAMPLE_QUESTIONS_MATH
+    elif(instance.category == 'Physics'):
+        questions = SAMPLE_QUESTIONS_PHY
+    elif(instance.category == 'Chemistry'):
+        questions = SAMPLE_QUESTIONS_CHEM
+    elif(instance.category == 'English'):
+        questions = SAMPLE_QUESTIONS_ENG
+    elif(instance.category == 'Logical Reasoning'):
+        questions = SAMPLE_QUESTIONS_LOGIC
+    elif(instance.category == 'ECAT'):
+        questions = SAMPLE_QUESTIONS_ECAT
+    elif(instance.category == 'MCAT'):
+        questions = SAMPLE_QUESTIONS_MCAT
+    else:
+        questions = SAMPLE_QUESTIONS
+    
+
     # questions = generate_questions()
-    questions = SAMPLE_QUESTIONS
+    # questions = SAMPLE_QUESTIONS
 
     # Update match with quiz questions
     instance.questions = questions
-    instance.save(update_fields=['questions'])
+    # instance.save(update_fields=['questions'])
+    Match.objects.filter(pk=instance.pk).update(questions=questions)
+

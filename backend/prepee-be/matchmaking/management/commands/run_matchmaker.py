@@ -50,6 +50,7 @@ class Command(BaseCommand):
                             redis_client.zrem(key, candidate_raw)
                             redis_client.zrem(key, opponent_raw)
 
+                            print("CREATIN GMATCH OBJECT")
                             match = Match.objects.create(category=category)
                             MatchPlayer.objects.create(match=match, user_id=cand["user_id"])
                             MatchPlayer.objects.create(match=match, user_id=opp["user_id"])
