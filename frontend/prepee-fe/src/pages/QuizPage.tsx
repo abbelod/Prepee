@@ -163,7 +163,7 @@ export default function QuizPage() {
           return;
         }
 
-        const response = await fetch(`http://localhost:8000/matchmaking/${matchData.matchId}/submit-answer/`, {
+        const response = await fetch(`http://prepee.onrender.com/matchmaking/${matchData.matchId}/submit-answer/`, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
@@ -188,7 +188,7 @@ export default function QuizPage() {
           if (pollTimerRef.current) clearInterval(pollTimerRef.current);
           pollTimerRef.current = window.setInterval(async () => {
             try {
-              const pollRes = await fetch(`http://localhost:8000/matchmaking/${matchData.matchId}/submit-answer/`, {
+              const pollRes = await fetch(`http://prepee.onrender.com/matchmaking/${matchData.matchId}/submit-answer/`, {
                 method: 'POST',
                 headers: {
                   'Content-Type': 'application/json',

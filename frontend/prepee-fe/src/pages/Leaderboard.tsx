@@ -29,7 +29,7 @@ function LeaderboardPage() {
       setError(null);
 
       try {
-        const response = await fetch('http://127.0.0.1:8000/api/leaderboards');
+        const response = await fetch('http://prepee.onrender.com/api/leaderboards');
         if (!response.ok) {
           throw new Error(`Request failed with status ${response.status}`);
         }

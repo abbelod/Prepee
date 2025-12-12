@@ -45,7 +45,7 @@ function HomePage() {
   
     const poll = async () => {
       try {
-        const response = await fetch("http://localhost:8000/matchmaking/find/", {
+        const response = await fetch("http://prepee.onrender.com/matchmaking/find/", {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
