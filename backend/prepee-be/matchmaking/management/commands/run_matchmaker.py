@@ -26,7 +26,6 @@ class Command(BaseCommand):
             for category in categories:
                 key = f"match_queue:{category}"
                 all_raw = redis_client.zrange(key, 0, -1)
-                print(f"People queued for {category}: {len(all_raw)}")
 
                 for candidate_raw in all_raw:
                     cand = json.loads(candidate_raw)
