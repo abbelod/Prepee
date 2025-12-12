@@ -403,11 +403,11 @@ SAMPLE_QUESTIONS_LOGIC = [
         "explanation": "Work ∝ 1/workers. Doubling workers halves the time → 10/2 = 5 days."
     },
     {
-        "id": 5,
-        "question": "Which figure completes the pattern? (Abstract reasoning)",
-        "options": ["Option A", "Option B", "Option C", "Option D"],
-        "answer": 1,
-        "explanation": "Option B logically completes the increasing shape rotation pattern."
+    "id": 5,
+    "question": "Which option completes the pattern? A, C, F, J, O, ?",
+    "options": ["T", "U", "V", "W"],
+    "answer": 0,
+    "explanation": "The differences are +2, +3, +4, +5. Next difference is +6, so O + 6 = T."
     },
     {
         "id": 6,
