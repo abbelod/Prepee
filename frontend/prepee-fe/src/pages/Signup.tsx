@@ -82,7 +82,7 @@ export default function Signup() {
     setErrors({}); // Clear any previous errors
 
     try {
-      const response = await fetch('http://prepee.onrender.com/api/auth/signup/', {
+      const response = await fetch('https://prepee.onrender.com/api/auth/signup/', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

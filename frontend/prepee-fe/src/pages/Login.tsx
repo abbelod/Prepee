@@ -39,7 +39,7 @@ export default function Login() {
     setErrors({}); // Clear any previous errors
 
     try {
-      const response = await fetch('http://prepee.onrender.com/api/auth/login/', {
+      const response = await fetch('https://prepee.onrender.com/api/auth/login/', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
