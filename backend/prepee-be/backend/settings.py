@@ -25,7 +25,7 @@ SECRET_KEY = 'django-insecure-)bmbb0k%k_z0z5*r6*@=@2#tl_mdyk&a4!u#@vy#7$vnn+z#eq
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
 
-ALLOWED_HOSTS = ['prepee.onrender.com']
+ALLOWED_HOSTS = ['prepee.onrender.com', '127.0.0.1']
 
 from datetime import timedelta
 

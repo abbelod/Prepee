@@ -2,6 +2,8 @@ import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import { BrowserRouter, Routes, Route } from "react-router";
 
+import { AuthProvider } from './pages/AuthProvider.tsx';
+
 import './index.css'
 import App from './App.tsx'
 import Login from './pages/Login.tsx';
@@ -13,6 +15,7 @@ import LeaderboardPage from './pages/Leaderboard.tsx';
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
+    <AuthProvider>
     <BrowserRouter>
       <Routes>
         <Route path="/" element={<App />} />
@@ -23,5 +26,6 @@ createRoot(document.getElementById('root')!).render(
         <Route path="/leaderboard" element={<LeaderboardPage />} />
       </Routes>
     </BrowserRouter>
+    </AuthProvider>
   </StrictMode>,
 )

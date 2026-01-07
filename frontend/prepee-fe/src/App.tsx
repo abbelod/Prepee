@@ -1,7 +1,7 @@
-import { useState } from 'react';
+import { useContext, useState } from 'react';
 import { useNavigate } from 'react-router';
+import Navbar from './pages/Navbar';
 import './App.css';
-
 const quizCategories = [
   { title: 'Logical Reasoning', icon: '🧠' },
   { title: 'Biology', icon: '🧬' },
@@ -116,7 +116,10 @@ function HomePage() {
             </span>
             Prepee Quiz
           </div>
-          <nav className="hidden items-center gap-6 text-sm font-medium text-slate-200 md:flex">
+          <Navbar>
+
+          </Navbar>
+          {/* <nav className="hidden items-center gap-6 text-sm font-medium text-slate-200 md:flex">
             <button 
               onClick={() => navigate('/')}
               className="transition hover:text-white"
@@ -149,7 +152,7 @@ function HomePage() {
                 Signup
               </button>
             </div>
-          </nav>
+          </nav> */}
           <button className="md:hidden" aria-label="Open Menu">
             <span className="inline-block h-5 w-6 border-y border-white/70" />
           </button>

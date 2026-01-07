@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router';
 
+import Navbar from './Navbar';
 type LeaderboardEntry = {
   username: string;
   position: number;
@@ -76,7 +77,10 @@ function LeaderboardPage() {
             </span>
             Prepee Leaderboard
           </button>
-          <div className="flex items-center gap-3 text-sm font-medium text-slate-200">
+          <Navbar>
+
+          </Navbar>
+          {/* <div className="flex items-center gap-3 text-sm font-medium text-slate-200">
             <button
               onClick={() => navigate('/')}
               className="rounded-full border border-white/20 px-4 py-2 transition hover:border-white hover:text-white"
@@ -89,7 +93,7 @@ function LeaderboardPage() {
             >
               Play Now
             </button>
-          </div>
+          </div> */}
         </div>
       </header>
 
