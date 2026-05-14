@@ -1,4 +1,4 @@
-import { useContext, useState } from 'react';
+import { useContext, useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router';
 import Navbar from './pages/Navbar';
 import './App.css';
@@ -21,10 +21,20 @@ function HomePage() {
   const [selectedTime, setSelectedTime] = useState<(typeof timeControls)[number]>('10 min');
   const [isSearching, setIsSearching] = useState(false);
 
+  // to persist across renders
+  const pollingTimerRef = useRef<number | null>(null);
+
+  // cleanup polling on unmount
+  useEffect(()=> {
+    return ()=> {
+      if (pollingTimerRef.current) {
+        clearInterval(pollingTimerRef.current);
+      }
+    };
+  }, []);
 
   const POLL_INTERVAL = 2000; // 2 seconds
-  let pollingTimer: number;
-  
+
   interface MatchResponse {
     status: "matched" | "waiting";
     match_id?: number;
@@ -32,17 +42,16 @@ function HomePage() {
     opponentCity?: string;
     questions?: any;
   }
-  
+
   const handleStartMatch = async (): Promise<void> => {
     setIsSearching(true);
-  
     const token = localStorage.getItem("accessToken");
     if (!token) {
       console.error("No access token found");
       setIsSearching(false);
       return;
     }
-  
+
     const poll = async () => {
       try {
         const response = await fetch("http://localhost:8000/matchmaking/find/", {
@@ -56,20 +65,20 @@ function HomePage() {
             timeControl: selectedTime,
           }),
         });
-  
+
         if (!response.ok) {
           console.error("Failed to check match", response.statusText);
           setIsSearching(false);
-          if (pollingTimer) clearInterval(pollingTimer);
+          if (pollingTimerRef.current) clearInterval(pollingTimerRef.current);
           return;
         }
-  
+
         const data: MatchResponse = await response.json();
         console.log("Polling response:", data);
-  
+
         if (data.status === "matched" && data.match_id) {
-          if (pollingTimer) clearInterval(pollingTimer);
-  
+          if (pollingTimerRef.current) clearInterval(pollingTimerRef.current);
+
           navigate("/quiz", {
             state: {
               matchId: data.match_id,
@@ -85,16 +94,50 @@ function HomePage() {
       } catch (error) {
         console.error("Error during polling:", error);
         setIsSearching(false);
-        if (pollingTimer) clearInterval(pollingTimer);
+        if (pollingTimerRef.current) clearInterval(pollingTimerRef.current);
       }
     };
-  
+
+
+
+
     // Start immediately
     poll();
-    pollingTimer = setInterval(poll, POLL_INTERVAL);
+
+    pollingTimerRef.current = setInterval(poll, POLL_INTERVAL);
+
   };
 
-  
+  // Define cancel function:
+  const handleCancelSearch = async () => {
+    if (pollingTimerRef.current) {
+      clearInterval(pollingTimerRef.current);
+      pollingTimerRef.current = null;
+    }
+    const token = localStorage.getItem("accessToken");
+    if (!token) {
+      setIsSearching(false);
+      return;
+    }
+    try {
+      // Send cancellation request to backend
+      await fetch("http://localhost:8000/matchmaking/cancel/", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({}), // or include category/time if needed
+      });
+    } catch (error) {
+      console.error("Error cancelling match search:", error);
+    } finally {
+      setIsSearching(false);
+    }
+
+  }
+
+
   return (
     <div className="min-h-screen bg-slate-950 text-white">
       {/* Loading Overlay */}
@@ -104,6 +147,21 @@ function HomePage() {
             {/* Spinning Circle */}
             <div className="h-16 w-16 animate-spin rounded-full border-4 border-indigo-500 border-t-transparent"></div>
             <p className="text-lg font-medium text-white">Finding a match...</p>
+          </div>
+        </div>
+      )}
+
+      {isSearching && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/90 backdrop-blur-sm">
+          <div className="flex flex-col items-center gap-4">
+            <div className="h-16 w-16 animate-spin rounded-full border-4 border-indigo-500 border-t-transparent"></div>
+            <p className="text-lg font-medium text-white">Finding a match...</p>
+            <button
+              onClick={handleCancelSearch}
+              className="mt-4 rounded-full bg-red-500/80 px-6 py-2 text-sm font-medium text-white hover:bg-red-600 transition"
+            >
+              Cancel Search
+            </button>
           </div>
         </div>
       )}
@@ -193,7 +251,7 @@ function HomePage() {
                 </span>
               </div>
             </div>
-            <button 
+            <button
               className="w-full max-w-xs rounded-2xl bg-indigo-500 px-6 py-3 text-sm font-semibold uppercase tracking-wide text-white shadow-xl shadow-indigo-500/30 transition hover:bg-indigo-400 disabled:opacity-50 disabled:cursor-not-allowed"
               onClick={handleStartMatch}
               disabled={isSearching}
@@ -214,9 +272,8 @@ function HomePage() {
                 key={category.title}
                 onClick={() => setSelectedCategory(category.title)}
                 aria-pressed={selectedCategory === category.title}
-                className={`rounded-3xl border border-white/10 bg-white/5 p-6 text-left transition hover:-translate-y-1 hover:border-indigo-400 hover:bg-white/10 hover:shadow-indigo-500/30 ${
-                  selectedCategory === category.title ? 'ring-2 ring-indigo-400' : 'ring-0'
-                }`}
+                className={`rounded-3xl border border-white/10 bg-white/5 p-6 text-left transition hover:-translate-y-1 hover:border-indigo-400 hover:bg-white/10 hover:shadow-indigo-500/30 ${selectedCategory === category.title ? 'ring-2 ring-indigo-400' : 'ring-0'
+                  }`}
               >
                 <div className="flex items-center gap-4">
                   <span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-indigo-500/20 text-2xl">

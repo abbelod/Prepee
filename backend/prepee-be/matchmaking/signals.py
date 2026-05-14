@@ -115,3 +115,5 @@ def add_quiz_to_match(sender, instance, created, **kwargs):
     # instance.save(update_fields=['questions'])
     Match.objects.filter(pk=instance.pk).update(questions=questions)
 
+def generate_questions(category):
+    pass

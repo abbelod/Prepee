@@ -1,12 +1,41 @@
-import { useContext } from "react";
 import { useNavigate } from "react-router";
-import { AuthContext } from "./AuthProvider";
-
+import { useAuth } from "./AuthProvider";
+import api from "../services/api";
 
 function Navbar() {
-    const { user, loading } = useContext(AuthContext);
+    const {user, loading, setUser} = useAuth();
     const navigate = useNavigate();
   
+
+    const logoutUser = async () => {
+      try {
+        const refreshToken = localStorage.getItem('refreshToken');
+        if (refreshToken) {
+          // Call backend logout endpoint (adjust URL to your actual endpoint)
+          await api.post('/auth/logout/', { refresh: refreshToken });
+        }
+      } catch (error) {
+        console.error('Logout API call failed:', error);
+        // Still proceed with frontend cleanup even if backend call fails
+      } finally {
+        // Clear all auth data from storage
+        localStorage.removeItem('accessToken');
+        localStorage.removeItem('refreshToken');
+        localStorage.removeItem('user');
+  
+        // Remove Authorization header from axios defaults
+        delete api.defaults.headers.common['Authorization'];
+  
+        // Update React context (so UI updates immediately)
+        setUser(null);
+  
+        // Redirect to login page
+        navigate('/login');
+      }
+
+    }
+    
+
     if (loading) return null; // optional: show spinner if you want
   
     return (
@@ -26,12 +55,7 @@ function Navbar() {
             <>
               <span className="text-slate-100">Hi, {user.username}</span>
               <button 
-                onClick={() => {
-                  // clear token and update auth state
-                  localStorage.removeItem("accessToken");
-                  localStorage.removeItem("refreshToken");
-                  window.location.reload(); // simple way to update UI
-                }}
+                onClick={logoutUser}
                 className="rounded-full border border-white/30 px-4 py-2 text-xs uppercase tracking-wide text-slate-100 transition hover:border-white hover:text-white"
               >
                 Logout

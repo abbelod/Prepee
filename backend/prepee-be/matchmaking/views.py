@@ -194,3 +194,47 @@ def process_quiz_submission(request, match_id):
         "you_won": mp.is_winner,
         "answers": correct_answers
     })
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def cancel_matchmaking(request):
+    user = request.user
+    category = request.data.get("category")  # optional, to cancel from a specific queue
+
+    redis_client = get_redis_connection("default")
+    match_key = f"user_match:{user.id}"
+
+    # If user is already matched, cannot cancel
+    if redis_client.exists(match_key):
+        return Response(
+            {"detail": "You have already been matched. Cancelling is not possible."},
+            status=400
+        )
+
+    # Remove user from the queue (sorted set)
+    if category:
+        queue_key = f"match_queue:{category}"
+        # Need to find and remove the exact member (JSON string)
+        members = redis_client.zrange(queue_key, 0, -1)
+        for member in members:
+            data = json.loads(member)
+            if data["user_id"] == user.id:
+                redis_client.zrem(queue_key, member)
+                break
+    else:
+        # Remove from all known categories
+        categories = ["general", "Logical Reasoning", "Biology", "Mathematics",
+                      "Chemistry", "Physics", "ECAT", "MCAT", "English"]
+        for cat in categories:
+            queue_key = f"match_queue:{cat}"
+            members = redis_client.zrange(queue_key, 0, -1)
+            for member in members:
+                data = json.loads(member)
+                if data["user_id"] == user.id:
+                    redis_client.zrem(queue_key, member)
+                    break
+
+    # Delete any leftover pending match key (just in case)
+    redis_client.delete(match_key)
+
+    return Response({"detail": "Matchmaking cancelled successfully."}, status=200)

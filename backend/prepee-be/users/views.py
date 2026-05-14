@@ -7,6 +7,7 @@ from django.contrib.auth import authenticate
 from rest_framework_simplejwt.tokens import RefreshToken
 from .serializers import RegisterSerializer, LoginSerializer
 from django.contrib.auth import get_user_model
+from rest_framework_simplejwt.exceptions import TokenError
 
 User = get_user_model()
 
@@ -34,6 +35,19 @@ class LoginView(generics.GenericAPIView):
             return Response(tokens, status=status.HTTP_200_OK)
         return Response({"error": "Invalid credentials"}, status=status.HTTP_401_UNAUTHORIZED)
 
+class LogoutView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        try:
+            # We expect the frontend to send the refresh token in the request body
+            refresh_token = request.data.get("refresh_token")
+            token = RefreshToken(refresh_token)
+            token.blacklist()
+            return Response({"detail": "Successfully logged out."}, status=200)
+        except TokenError:
+            return Response({"detail": "Invalid token."}, status=400)
+        
 
 class MeView(APIView):
     permission_classes = [IsAuthenticated]
