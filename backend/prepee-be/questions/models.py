@@ -7,7 +7,8 @@ class Subject(models.Model):
 
 
 class Questions(models.Model):
-    subject = models.ForeignKey(Subject, on_delete=models.CASCADE)
+    # subject = models.ForeignKey(Subject, on_delete=models.CASCADE)
+    subject = models.CharField(max_length=30)
 
     text = models.TextField()
     explanation = models.TextField(blank=True)

@@ -68,6 +68,7 @@ INSTALLED_APPS = [
     'corsheaders',
     'leaderboards',
     'rest_framework_simplejwt.token_blacklist',
+    'questions'
 ]
 
 MIDDLEWARE = [

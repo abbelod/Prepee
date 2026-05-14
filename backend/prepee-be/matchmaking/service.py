@@ -2,6 +2,7 @@ import json
 import time
 from django_redis import get_redis_connection
 from .models import Match, MatchPlayer
+from questions.models import Questions
 # from django.contrib.auth.models import User
 # from .utils import generate_questions
 
@@ -146,3 +147,48 @@ def find_match_for_user(user, category="general"):
     print("Added user to queue")
 
     return {"status": "waiting"}
+
+
+def generate_quiz_questions(category, time_control):
+    # decide number of questions based on time control
+
+    num_questions = 20 # default
+
+    if time_control == "5 min":
+        num_questions = 10
+    elif time_control == "10 min":
+        num_questions = 20
+    elif time_control == "15 min":
+        num_questions = 30
+
+    # Determine which subjects to pull from
+    if category == "ECAT":
+        subject_names = ['Mathematics', 'Physics', 'Chemistry', 'Logical Reasoning', 'English']
+    elif category == "MCAT":
+        subject_names = ['Biology', 'Physics', 'Chemistry', 'Logical Reasoning', 'English']
+    else:
+        # Direct subject category
+        subject_names = [category]
+    
+    # Fetch random questions from those subjects (direct CharField filter)
+    questions_qs = Questions.objects.filter(subject__in=subject_names).order_by('?')[:num_questions]
+
+
+    # Convert to list of dicts as expected by frontend
+    questions_list = []
+    for q in questions_qs:
+        options = [q.option_a, q.option_b, q.option_c, q.option_d]
+        # Convert letter to index (A->0, B->1, C->2, D->3)
+        answer_index = ord(q.correct_option) - ord('A')
+
+        questions_list.append({
+            "id": q.id,
+            "question": q.text,
+            "options": options,
+            "answer": answer_index,
+            "explanation": q.explanation,
+        })
+    return questions_list
+
+
+

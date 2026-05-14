@@ -2,11 +2,25 @@ from django.shortcuts import render
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
-from .service import find_match_for_user
+from .service import find_match_for_user, generate_quiz_questions
 from django_redis import get_redis_connection
 from .models import Match, MatchPlayer
 import json
 
+
+def parse_time_control(time_control_str):
+    """
+    Convert '5 min', '10 min', '15 min', or 'ANY' to an integer (minutes).
+    For 'ANY' or unknown, return a default (e.g., 20 minutes).
+    """
+    if time_control_str == "ANY":
+        return 20   # or any sensible default, maybe 10 or 15
+    try:
+        # Split by space and take the first part as number
+        minutes = int(time_control_str.split()[0])
+        return minutes
+    except (IndexError, ValueError):
+        return 20   # fallback
 
 redis= get_redis_connection("default")
 # Create your views here.
@@ -16,10 +30,42 @@ redis= get_redis_connection("default")
 def find_match(request):
     user = request.user
     category = request.data.get("category", "general")
+    solo_mode = request.data.get("soloMode", False)
+    time_control = request.data.get("timeControl", "10 min")
     print(f"User requested match for category: {category}")
 
-    result = find_match_for_user(user, category)
+    # Convert time_control string to integer
+    minutes = parse_time_control(time_control)
 
+    if solo_mode:
+        # 1. Generate questions for the given category and time control
+        questions = generate_quiz_questions(category, time_control)
+        if not questions:
+            return Response({"error": "No questions available"}, status = 400)
+        
+        # 2. Create a solo match
+        match = Match.objects.create(
+            time_control = minutes,
+            category=category,
+            questions=questions,
+        )
+
+        # 3. Add the current user as the only player
+        MatchPlayer.objects.create(match=match, user=user)
+
+        # 4. Return immediately (no queue)
+        return Response({
+            "status": "matched",
+            "match_id": match.id,
+            "questions": questions,
+            "opponentName": "Solo Practice",
+            "opponentCity": "",
+            "timeControl": time_control,
+        })
+
+
+    # Normal multiplayer mode
+    result = find_match_for_user(user, category)
     return Response(result)
 
 
@@ -69,8 +115,47 @@ def process_quiz_submission(request, match_id):
     except MatchPlayer.DoesNotExist:
         return Response({"error": "You are not part of this match"}, status=403)
 
+    is_solo = (match.matchplayer_set.count() == 1)
+
+    if is_solo:
+        # User has not submitted yet?
+        if not mp.submitted:
+            submission = request.data.get("submission")
+            time_taken = request.data.get("time_taken", 0)
+
+            if not submission:
+                return Response({"error": "Submission missing"}, status = 400)
+            
+            
+            mp.submission = submission
+            mp.time_taken = float(time_taken)
+            mp.submitted = True
+
+            # Calculate score using correct answers fron match.questions
+            correct_answers = match.questions
+            mp.score = calculate_score(submission, correct_answers)
+            mp.save()
+            print(f"{request.user.username} completed solo match, score: {mp.score}")
+
+        # Mark match as completed immediately, no opponent to wait for
+        match.is_completed = True
+        match.save()
+
+        # Return solo result
+        return Response({
+            "status": "completed",
+            "your_score": mp.score,
+            "opponent_score": None,
+            "winner": request.user.username,
+            "you_won": True,
+            "answers": match.questions,
+        })
+
+            
+    # --- Multiplayer mode (existing logic with fixes) ---
+    # Fix: 'if mp.submitted == False or True' → 'if not mp.submitted'
     # If user has not submitted answers yet, submit them.
-    if mp.submitted == False or True:
+    if not mp.submitted:
         # 1. Save player's submission
         submission = request.data.get("submission")
         time_taken = request.data.get("time_taken", 0)
@@ -84,24 +169,9 @@ def process_quiz_submission(request, match_id):
 
         # correct_answers = json.loads(match.questions)  # stored as JSON in Match model
         correct_answers = match.questions # stored as JSON in Match model
-        def calculate_score(submission_dict):
-            """
-            submission_dict: { question_id: selected_option_index }
-            """
-            score = 0
-            for q in correct_answers:
-                qid = q["id"]
-                correct_ans = q["options"][q["answer"]]
-                print("correct ans", correct_ans)
-                print(type(submission_dict))
-                print((submission_dict))
-                print(qid)
-                if str(qid) in submission_dict and submission_dict[str(qid)] == correct_ans:
-                    print("correct ans")
-                    score += 1
-            return score
-
-        mp.score = calculate_score(mp.submission)
+        # print(correct_answers)
+        
+        mp.score = calculate_score(mp.submission, correct_answers)
         mp.save()
         print(f"{request.user.username} submitted answers: {submission} score:{mp.score}")
 
@@ -109,7 +179,6 @@ def process_quiz_submission(request, match_id):
 
     # 2. Get opponent MatchPlayer
     opponent = MatchPlayer.objects.filter(match=match).exclude(user=request.user).first()
-
     if not opponent:
         return Response({"error": "Opponent not found"}, status=500)
 
@@ -117,11 +186,8 @@ def process_quiz_submission(request, match_id):
     if not opponent.submitted:
         return Response({"status": "waiting", "message": "Waiting for opponent..."})
 
-    # 3. If both submitted → calculate results
 
-    
-
-    # 4. Decide winner
+    # If Both submitted, Decide winner
     if mp.score > opponent.score:
         mp.is_winner = True
         opponent.is_winner = False
@@ -194,6 +260,24 @@ def process_quiz_submission(request, match_id):
         "you_won": mp.is_winner,
         "answers": correct_answers
     })
+
+def calculate_score(submission_dict, correct_answers):
+            """
+            submission_dict: { question_id: selected_option_index }
+            """
+            score = 0
+            for q in correct_answers:
+                qid = q["id"]
+                correct_ans = q["options"][q["answer"]]
+                print("correct ans", correct_ans)
+                print(type(submission_dict))
+                print((submission_dict))
+                print(qid)
+                if str(qid) in submission_dict and submission_dict[str(qid)] == correct_ans:
+                    print("correct ans")
+                    score += 1
+            return score
+
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
