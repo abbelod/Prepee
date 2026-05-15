@@ -1,46 +1,119 @@
-import logging
 from django.db.models.signals import post_save
 from django.dispatch import receiver
 from .models import Match
+# from .quiz_generator import generate_questions   # your quiz logic
+from .sample_q import SAMPLE_QUESTIONS_BIO, SAMPLE_QUESTIONS_CHEM, SAMPLE_QUESTIONS_ECAT, SAMPLE_QUESTIONS_ENG, SAMPLE_QUESTIONS_LOGIC, SAMPLE_QUESTIONS_MATH, SAMPLE_QUESTIONS_MCAT, SAMPLE_QUESTIONS_PHY
 
-logger = logging.getLogger(__name__)
+SAMPLE_QUESTIONS = [
+    {
+        "id": 1,
+        "question": "What is the capital of France?",
+        "options": ["London", "Paris", "Berlin", "Rome"],
+        "answer": 1,
+        "explanation": "Paris is the capital of France."
+    },
+    {
+        "id": 2,
+        "question": "What is 2 + 2?",
+        "options": ["3", "4", "5", "6"],
+        "answer": 1,
+        "explanation": "2 + 2 equals 4."
+    },
+    {
+        "id": 3,
+        "question": "Which planet is known as the Red Planet?",
+        "options": ["Earth", "Mars", "Venus", "Jupiter"],
+        "answer": 1,
+        "explanation": "Mars is called the Red Planet due to its reddish appearance."
+    },
+    {
+        "id": 4,
+        "question": "Who wrote 'Romeo and Juliet'?",
+        "options": ["Charles Dickens", "William Shakespeare", "Mark Twain", "Jane Austen"],
+        "answer": 1,
+        "explanation": "William Shakespeare wrote 'Romeo and Juliet'."
+    },
+    {
+        "id": 5,
+        "question": "What is the boiling point of water at sea level?",
+        "options": ["90°C", "100°C", "110°C", "120°C"],
+        "answer": 1,
+        "explanation": "Water boils at 100°C at sea level."
+    },
+    {
+        "id": 6,
+        "question": "Which gas do humans breathe in for survival?",
+        "options": ["Carbon dioxide", "Oxygen", "Nitrogen", "Hydrogen"],
+        "answer": 1,
+        "explanation": "Humans need oxygen to survive."
+    },
+    {
+        "id": 7,
+        "question": "What is the largest mammal on Earth?",
+        "options": ["Elephant", "Blue Whale", "Giraffe", "Hippopotamus"],
+        "answer": 1,
+        "explanation": "The Blue Whale is the largest mammal."
+    },
+    {
+        "id": 8,
+        "question": "Which element has the chemical symbol 'O'?",
+        "options": ["Oxygen", "Gold", "Osmium", "Silver"],
+        "answer": 0,
+        "explanation": "The symbol 'O' stands for Oxygen."
+    },
+    {
+        "id": 9,
+        "question": "What is the square root of 64?",
+        "options": ["6", "7", "8", "9"],
+        "answer": 2,
+        "explanation": "8 × 8 = 64, so the square root is 8."
+    },
+    {
+        "id": 10,
+        "question": "Which continent is Australia in?",
+        "options": ["Africa", "Europe", "Australia", "Asia"],
+        "answer": 2,
+        "explanation": "Australia is its own continent."
+    }
+]
 
-
-def get_questions_for_category(category, count=10):
-    """Fetch real questions from ml_engine Question model."""
-    try:
-        from ml_engine.models import Question
-
-        questions = Question.objects.filter(subject=category)
-        if not questions.exists():
-            questions = Question.objects.all()
-        if not questions.exists():
-            return None
-
-        question_list = list(questions.order_by('?')[:count])
-        return [
-            {
-                "id": q.id,
-                "question": q.text,
-                "options": q.options,
-                "answer": q.correct_answer_index,
-                "explanation": q.explanation,
-                "category": q.subject,
-            }
-            for q in question_list
-        ]
-    except Exception as e:
-        logger.warning(f"Failed to fetch questions for category '{category}': {e}")
-        return None
 
 
 @receiver(post_save, sender=Match)
 def add_quiz_to_match(sender, instance, created, **kwargs):
-    if not created:
-        return
 
-    questions = get_questions_for_category(instance.category)
-    if questions:
-        instance.questions = questions
-        instance.save(update_fields=['questions'])
-        logger.info(f"Assigned {len(questions)} questions to Match {instance.id}")
+    if instance.questions is not None:
+        return
+    
+    print(f"[SIGNAL] Generating quiz for Match {instance.id}")
+
+    if(instance.category == 'Biology'):
+        questions = SAMPLE_QUESTIONS_BIO
+    elif(instance.category == 'Mathematics'):
+        questions = SAMPLE_QUESTIONS_MATH
+    elif(instance.category == 'Physics'):
+        questions = SAMPLE_QUESTIONS_PHY
+    elif(instance.category == 'Chemistry'):
+        questions = SAMPLE_QUESTIONS_CHEM
+    elif(instance.category == 'English'):
+        questions = SAMPLE_QUESTIONS_ENG
+    elif(instance.category == 'Logical Reasoning'):
+        questions = SAMPLE_QUESTIONS_LOGIC
+    elif(instance.category == 'ECAT'):
+        questions = SAMPLE_QUESTIONS_ECAT
+    elif(instance.category == 'MCAT'):
+        questions = SAMPLE_QUESTIONS_MCAT
+    else:
+        questions = SAMPLE_QUESTIONS
+    
+
+    # questions = generate_questions()
+    # questions = SAMPLE_QUESTIONS
+
+    # Update match with quiz questions
+    instance.questions = questions
+    # instance.save(update_fields=['questions'])
+    Match.objects.filter(pk=instance.pk).update(questions=questions)
+
+def generate_questions(category):
+    pass

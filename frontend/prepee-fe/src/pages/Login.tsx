@@ -1,6 +1,8 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router';
 import './Auth.css';
+import api from '../services/api'
+import { useAuth } from './AuthProvider';
 
 export default function Login() {
   const navigate = useNavigate();
@@ -8,6 +10,7 @@ export default function Login() {
   const [password, setPassword] = useState('');
   const [errors, setErrors] = useState<{ email?: string; password?: string; general?: string }>({});
   const [isLoading, setIsLoading] = useState(false);
+  const { setUser } = useAuth();
 
   const validateForm = () => {
     const newErrors: { email?: string; password?: string } = {};
@@ -28,6 +31,29 @@ export default function Login() {
     return Object.keys(newErrors).length === 0;
   };
 
+  // Login function using the configured axios instance (api)
+  async function loginUser(email: string, password: string) {
+    try {
+      const response = await api.post('/auth/login/', { email, password });
+      const { access, refresh, user } = response.data;
+      localStorage.setItem('accessToken', access);
+      localStorage.setItem('refreshToken', refresh);
+
+      setUser(user);
+
+      if (user) {
+        localStorage.setItem('user', JSON.stringify(user));
+      }
+      // Set the default Authorization header for future requests
+      api.defaults.headers.common['Authorization'] = 'Bearer ' + access;
+      return { success: true };
+    } catch (error: any) {
+      console.error("Login failed", error);
+      // Return the error response data for further handling
+      return { success: false, error: error.response?.data };
+    }
+  }
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
@@ -39,58 +65,31 @@ export default function Login() {
     setErrors({}); // Clear any previous errors
 
     try {
-      const response = await fetch('http://127.0.0.1:8000/api/auth/login/', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          email,
-          password,
-        }),
-      });
+      const result = await loginUser(email, password);
 
-      const data = await response.json();
-
-      if (response.ok) {
-        // Store the authentication token (adjust based on your API response)
-        // if (data.token) {
-        //   localStorage.setItem('authToken', data.token);
-        // }
-
-        // Or if your API returns access and refresh tokens:
-        if(data.access){
-          localStorage.setItem('accessToken', data.access);
-        }
-        if(data.refresh){
-          localStorage.setItem('refreshToken', data.refresh);
-        }
-
-        // Store user data if needed
-        if (data.user) {
-          localStorage.setItem('user', JSON.stringify(data.user));
-        }
-
-        // Navigate to home page
+      if (result.success) {
         navigate('/');
       } else {
-        // Handle error responses
-        if (data.email) {
-          setErrors({ email: data.email[0] });
-        } else if (data.password) {
-          setErrors({ password: data.password[0] });
-        } else if (data.detail) {
-          setErrors({ general: data.detail });
-        } else if (data.non_field_errors) {
-          setErrors({ general: data.non_field_errors[0] });
+        // Handle error response from the API
+        const errorData = result.error;
+        if (errorData?.email) {
+          setErrors({ email: errorData.email[0] });
+        } else if (errorData?.password) {
+          setErrors({ password: errorData.password[0] });
+        } else if (errorData?.detail) {
+          setErrors({ general: errorData.detail });
+        } else if (errorData?.non_field_errors) {
+          setErrors({ general: errorData.non_field_errors[0] });
         } else {
           setErrors({ general: 'Login failed. Please check your credentials.' });
         }
       }
     } catch (error) {
+      // This catch should rarely happen because loginUser catches errors,
+      // but kept for safety
       console.error('Login error:', error);
-      setErrors({ 
-        general: 'Unable to connect to the server. Please try again later.' 
+      setErrors({
+        general: 'Unable to connect to the server. Please try again later.'
       });
     } finally {
       setIsLoading(false);

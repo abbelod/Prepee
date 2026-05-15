@@ -30,7 +30,7 @@ SECRET_KEY = 'django-insecure-)bmbb0k%k_z0z5*r6*@=@2#tl_mdyk&a4!u#@vy#7$vnn+z#eq
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
 
-ALLOWED_HOSTS = []
+ALLOWED_HOSTS = ['prepee.onrender.com', '127.0.0.1', 'localhost']
 
 from datetime import timedelta
 
@@ -43,6 +43,10 @@ REST_FRAMEWORK = {
 SIMPLE_JWT = {
     'ACCESS_TOKEN_LIFETIME': timedelta(minutes=60),
     'REFRESH_TOKEN_LIFETIME': timedelta(days=1),
+    # Enable this for rotation (Issues a new refresh token on each refresh)
+    'ROTATE_REFRESH_TOKENS': True,
+    # When rotation is on, blacklist the old refresh token
+    'BLACKLIST_AFTER_ROTATION': True,
 }
 
 
@@ -68,6 +72,9 @@ INSTALLED_APPS = [
     'ml_engine',
     'rest_framework',
     'corsheaders',
+    'leaderboards',
+    'rest_framework_simplejwt.token_blacklist',
+    'questions'
 ]
 
 MIDDLEWARE = [

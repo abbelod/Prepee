@@ -24,6 +24,7 @@ from rest_framework_simplejwt.views import (
 urlpatterns = [
     path('admin/', admin.site.urls),
     path('matchmaking/', include("matchmaking.urls")),
+    path('api/', include("leaderboards.urls")),
     path('api/auth/', include('users.urls')),
     path('ml/', include('ml_engine.urls')),
     path('api/token/', TokenObtainPairView.as_view(), name='token_obtain_pair'),

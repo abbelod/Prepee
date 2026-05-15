@@ -1,3 +1,5 @@
+import Navbar from "./Navbar";
+
 function AboutPage() {
   const features = [
     {
@@ -66,7 +68,7 @@ function AboutPage() {
             </span>
             PrePee Quiz
           </div>
-          <nav className="hidden items-center gap-6 text-sm font-medium text-slate-200 md:flex">
+          {/* <nav className="hidden items-center gap-6 text-sm font-medium text-slate-200 md:flex">
             <a className="transition hover:text-white" href="#">
               Home
             </a>
@@ -84,7 +86,10 @@ function AboutPage() {
                 Signup
               </button>
             </div>
-          </nav>
+          </nav> */}
+          <Navbar>
+
+          </Navbar>
           <button className="md:hidden" aria-label="Open Menu">
             <span className="inline-block h-5 w-6 border-y border-white/70" />
           </button>

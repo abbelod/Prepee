@@ -2,105 +2,69 @@ import logging
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
+from .service import find_match_for_user, generate_quiz_questions
 from django_redis import get_redis_connection
 from .service import find_match_for_user
 from .models import Match, MatchPlayer
 
-logger = logging.getLogger(__name__)
 
-
-# ─────────────────────────────────────────────
-# HELPER: Create QuestionAttempt records
-# ─────────────────────────────────────────────
-
-def _create_question_attempts(user, match, submission, questions, total_time):
-    """Create ml_engine QuestionAttempt records from a player's submission."""
+def parse_time_control(time_control_str):
+    """
+    Convert '5 min', '10 min', '15 min', or 'ANY' to an integer (minutes).
+    For 'ANY' or unknown, return a default (e.g., 20 minutes).
+    """
+    if time_control_str == "ANY":
+        return 20   # or any sensible default, maybe 10 or 15
     try:
-        from ml_engine.models import Question, QuestionAttempt
+        # Split by space and take the first part as number
+        minutes = int(time_control_str.split()[0])
+        return minutes
+    except (IndexError, ValueError):
+        return 20   # fallback
 
-        num_questions = len(questions) if questions else 0
-        avg_time = total_time / num_questions if num_questions > 0 else 0
-
-        attempts = []
-        for q in questions:
-            qid = q["id"]
-            correct_ans = q["options"][q["answer"]]
-            selected = submission.get(str(qid))
-
-            if selected is None:
-                continue
-
-            try:
-                question_obj = Question.objects.get(id=qid)
-            except Question.DoesNotExist:
-                continue
-
-            attempts.append(QuestionAttempt(
-                student=user,
-                question=question_obj,
-                match=match,
-                selected_answer=selected,
-                is_correct=(selected == correct_ans),
-                time_taken_seconds=round(avg_time, 2),
-            ))
-
-        if attempts:
-            QuestionAttempt.objects.bulk_create(attempts)
-            logger.info(f"Created {len(attempts)} QuestionAttempts for {user.username} in Match {match.id}")
-
-    except Exception as e:
-        logger.warning(f"Failed to create QuestionAttempts: {e}")
-
-
-# ─────────────────────────────────────────────
-# HELPER: Post-match ML processing
-# ─────────────────────────────────────────────
-
-def _run_post_match_ml(user, match):
-    """Run cheating detection and update student profile after match."""
-    try:
-        from ml_engine.cheating import HybridCheatingDetector
-        from ml_engine.recommender import StudentProfiler
-
-        # Cheating detection
-        detector = HybridCheatingDetector()
-        result = detector.analyze_match(user, match)
-        if result and result.get('should_flag'):
-            logger.warning(
-                f"Cheating flag for {user.username} in Match {match.id}: "
-                f"score={result['composite_score']:.4f}, signal={result['dominant_signal']}"
-            )
-
-        # Update student profile
-        profiler = StudentProfiler()
-        profiler.update_profile(user)
-
-    except Exception as e:
-        logger.warning(f"Post-match ML processing failed for {user.username}: {e}")
-
-
-# ─────────────────────────────────────────────
-# HELPER: Safely read match questions from JSONField
-# ─────────────────────────────────────────────
-
-def _get_match_questions(match):
-    """Safely get questions, handling both JSON string and native JSONField."""
-    import json
-    q = match.questions
-    if isinstance(q, str):
-        return json.loads(q)
-    return q
-
-
-# ─────────────────────────────────────────────
-# VIEWS
-# ─────────────────────────────────────────────
+redis= get_redis_connection("default")
+# Create your views here.
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 def find_match(request):
     user = request.user
     category = request.data.get("category", "general")
+    solo_mode = request.data.get("soloMode", False)
+    time_control = request.data.get("timeControl", "10 min")
+    print(f"User requested match for category: {category}")
+
+    # Convert time_control string to integer
+    minutes = parse_time_control(time_control)
+
+    if solo_mode:
+        # 1. Generate questions for the given category and time control
+        questions = generate_quiz_questions(category, time_control)
+        if not questions:
+            return Response({"error": "No questions available"}, status = 400)
+        
+        # 2. Create a solo match
+        match = Match.objects.create(
+            time_control = minutes,
+            category=category,
+            questions=questions,
+        )
+
+        # 3. Add the current user as the only player
+        MatchPlayer.objects.create(match=match, user=user)
+
+        # 4. Return immediately (no queue)
+        return Response({
+            "status": "matched",
+            "match_id": match.id,
+            "questions": questions,
+            "opponentName": "Solo Practice",
+            "opponentCity": "",
+            "timeControl": time_control,
+        })
+
+
+    # Normal multiplayer mode
     result = find_match_for_user(user, category)
     return Response(result)
 
@@ -142,11 +106,48 @@ def process_quiz_submission(request, match_id):
     except MatchPlayer.DoesNotExist:
         return Response({"error": "You are not part of this match"}, status=403)
 
-    # Get questions from match (handles both JSON string and native JSONField)
-    correct_answers = _get_match_questions(match)
+    is_solo = (match.matchplayer_set.count() == 1)
 
+    if is_solo:
+        # User has not submitted yet?
+        if not mp.submitted:
+            submission = request.data.get("submission")
+            time_taken = request.data.get("time_taken", 0)
+
+            if not submission:
+                return Response({"error": "Submission missing"}, status = 400)
+            
+            
+            mp.submission = submission
+            mp.time_taken = float(time_taken)
+            mp.submitted = True
+
+            # Calculate score using correct answers fron match.questions
+            correct_answers = match.questions
+            mp.score = calculate_score(submission, correct_answers)
+            mp.save()
+            print(f"{request.user.username} completed solo match, score: {mp.score}")
+
+        # Mark match as completed immediately, no opponent to wait for
+        match.is_completed = True
+        match.save()
+
+        # Return solo result
+        return Response({
+            "status": "completed",
+            "your_score": mp.score,
+            "opponent_score": None,
+            "winner": request.user.username,
+            "you_won": True,
+            "answers": match.questions,
+        })
+
+            
+    # --- Multiplayer mode (existing logic with fixes) ---
+    # Fix: 'if mp.submitted == False or True' → 'if not mp.submitted'
     # If user has not submitted answers yet, submit them.
     if not mp.submitted:
+        # 1. Save player's submission
         submission = request.data.get("submission")
         time_taken = request.data.get("time_taken", 0)
 
@@ -157,30 +158,17 @@ def process_quiz_submission(request, match_id):
         mp.time_taken = float(time_taken)
         mp.submitted = True
 
-        def calculate_score(submission_dict):
-            score = 0
-            for q in correct_answers:
-                qid = q["id"]
-                correct_ans = q["options"][q["answer"]]
-                if str(qid) in submission_dict and submission_dict[str(qid)] == correct_ans:
-                    score += 1
-            return score
-
-        mp.score = calculate_score(mp.submission)
+        # correct_answers = json.loads(match.questions)  # stored as JSON in Match model
+        correct_answers = match.questions # stored as JSON in Match model
+        # print(correct_answers)
+        
+        mp.score = calculate_score(mp.submission, correct_answers)
         mp.save()
 
-        # Create QuestionAttempt records for ML tracking
-        _create_question_attempts(
-            user=request.user,
-            match=match,
-            submission=mp.submission,
-            questions=correct_answers,
-            total_time=mp.time_taken,
-        )
+    # Check for opponents submission status 
 
     # Get opponent MatchPlayer
     opponent = MatchPlayer.objects.filter(match=match).exclude(user=request.user).first()
-
     if not opponent:
         return Response({"error": "Opponent not found"}, status=500)
 
@@ -188,7 +176,8 @@ def process_quiz_submission(request, match_id):
     if not opponent.submitted:
         return Response({"status": "waiting", "message": "Waiting for opponent..."})
 
-    # Both submitted → determine winner
+
+    # If Both submitted, Decide winner
     if mp.score > opponent.score:
         mp.is_winner = True
         opponent.is_winner = False
@@ -210,13 +199,46 @@ def process_quiz_submission(request, match_id):
     mp.save()
     opponent.save()
 
-    # Mark match complete
+    # Remove entries from redis 
+    keys = [f"user_match:{mp.user.id}", f"user_match:{opponent.user.id}"]
+    redis.delete(*keys)
+
+    # 5. Mark match complete
     match.is_completed = True
     match.save()
 
-    # Run cheating detection + update ML profiles for both players
-    _run_post_match_ml(request.user, match)
-    _run_post_match_ml(opponent.user, match)
+    # 6. Optional ELO update
+    def update_elo(mp, opponent):
+        R_a = mp.user.elo
+        R_b = opponent.user.elo
+        K = 32
+
+        # If draw, score =0.5 for both players
+        if mp.is_winner == False and opponent.is_winner == False:
+            S_a = 0.5
+            S_b = 0.5
+        
+        elif mp.is_winner == True:
+            S_a = 1
+            S_b = 0
+        else:
+            S_b = 1
+            S_a = 0
+        
+        E_a = 1 / (1 + 10 ** ((R_b-R_a)/400))
+        E_b = 1 / (1 + 10 ** ((R_a-R_b)/400))
+
+        mp.user.elo = round(mp.user.elo + K*(S_a - E_a))
+        opponent.user.elo = round(opponent.user.elo + K*(S_b - E_b))
+
+        print("new mp elo:", mp.user.elo)
+        print("new opponenet elo:", opponent.user.elo)
+        mp.user.save()
+        opponent.user.save()
+
+    # Update elo of both players
+    update_elo(mp, opponent)
+        
 
     # Return result to frontend
     return Response({
@@ -225,5 +247,67 @@ def process_quiz_submission(request, match_id):
         "opponent_score": opponent.score,
         "winner": mp.user.username if mp.is_winner else opponent.user.username,
         "you_won": mp.is_winner,
-        "answers": correct_answers,
+        "answers": correct_answers
     })
+
+def calculate_score(submission_dict, correct_answers):
+            """
+            submission_dict: { question_id: selected_option_index }
+            """
+            score = 0
+            for q in correct_answers:
+                qid = q["id"]
+                correct_ans = q["options"][q["answer"]]
+                print("correct ans", correct_ans)
+                print(type(submission_dict))
+                print((submission_dict))
+                print(qid)
+                if str(qid) in submission_dict and submission_dict[str(qid)] == correct_ans:
+                    print("correct ans")
+                    score += 1
+            return score
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def cancel_matchmaking(request):
+    user = request.user
+    category = request.data.get("category")  # optional, to cancel from a specific queue
+
+    redis_client = get_redis_connection("default")
+    match_key = f"user_match:{user.id}"
+
+    # If user is already matched, cannot cancel
+    if redis_client.exists(match_key):
+        return Response(
+            {"detail": "You have already been matched. Cancelling is not possible."},
+            status=400
+        )
+
+    # Remove user from the queue (sorted set)
+    if category:
+        queue_key = f"match_queue:{category}"
+        # Need to find and remove the exact member (JSON string)
+        members = redis_client.zrange(queue_key, 0, -1)
+        for member in members:
+            data = json.loads(member)
+            if data["user_id"] == user.id:
+                redis_client.zrem(queue_key, member)
+                break
+    else:
+        # Remove from all known categories
+        categories = ["general", "Logical Reasoning", "Biology", "Mathematics",
+                      "Chemistry", "Physics", "ECAT", "MCAT", "English"]
+        for cat in categories:
+            queue_key = f"match_queue:{cat}"
+            members = redis_client.zrange(queue_key, 0, -1)
+            for member in members:
+                data = json.loads(member)
+                if data["user_id"] == user.id:
+                    redis_client.zrem(queue_key, member)
+                    break
+
+    # Delete any leftover pending match key (just in case)
+    redis_client.delete(match_key)
+
+    return Response({"detail": "Matchmaking cancelled successfully."}, status=200)
