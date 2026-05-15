@@ -1,53 +1,129 @@
-from django.shortcuts import render
+import logging
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
-from .service import find_match_for_user
 from django_redis import get_redis_connection
+from .service import find_match_for_user
 from .models import Match, MatchPlayer
-import json
 
-# Create your views here.
+logger = logging.getLogger(__name__)
+
+
+# ─────────────────────────────────────────────
+# HELPER: Create QuestionAttempt records
+# ─────────────────────────────────────────────
+
+def _create_question_attempts(user, match, submission, questions, total_time):
+    """Create ml_engine QuestionAttempt records from a player's submission."""
+    try:
+        from ml_engine.models import Question, QuestionAttempt
+
+        num_questions = len(questions) if questions else 0
+        avg_time = total_time / num_questions if num_questions > 0 else 0
+
+        attempts = []
+        for q in questions:
+            qid = q["id"]
+            correct_ans = q["options"][q["answer"]]
+            selected = submission.get(str(qid))
+
+            if selected is None:
+                continue
+
+            try:
+                question_obj = Question.objects.get(id=qid)
+            except Question.DoesNotExist:
+                continue
+
+            attempts.append(QuestionAttempt(
+                student=user,
+                question=question_obj,
+                match=match,
+                selected_answer=selected,
+                is_correct=(selected == correct_ans),
+                time_taken_seconds=round(avg_time, 2),
+            ))
+
+        if attempts:
+            QuestionAttempt.objects.bulk_create(attempts)
+            logger.info(f"Created {len(attempts)} QuestionAttempts for {user.username} in Match {match.id}")
+
+    except Exception as e:
+        logger.warning(f"Failed to create QuestionAttempts: {e}")
+
+
+# ─────────────────────────────────────────────
+# HELPER: Post-match ML processing
+# ─────────────────────────────────────────────
+
+def _run_post_match_ml(user, match):
+    """Run cheating detection and update student profile after match."""
+    try:
+        from ml_engine.cheating import HybridCheatingDetector
+        from ml_engine.recommender import StudentProfiler
+
+        # Cheating detection
+        detector = HybridCheatingDetector()
+        result = detector.analyze_match(user, match)
+        if result and result.get('should_flag'):
+            logger.warning(
+                f"Cheating flag for {user.username} in Match {match.id}: "
+                f"score={result['composite_score']:.4f}, signal={result['dominant_signal']}"
+            )
+
+        # Update student profile
+        profiler = StudentProfiler()
+        profiler.update_profile(user)
+
+    except Exception as e:
+        logger.warning(f"Post-match ML processing failed for {user.username}: {e}")
+
+
+# ─────────────────────────────────────────────
+# HELPER: Safely read match questions from JSONField
+# ─────────────────────────────────────────────
+
+def _get_match_questions(match):
+    """Safely get questions, handling both JSON string and native JSONField."""
+    import json
+    q = match.questions
+    if isinstance(q, str):
+        return json.loads(q)
+    return q
+
+
+# ─────────────────────────────────────────────
+# VIEWS
+# ─────────────────────────────────────────────
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 def find_match(request):
     user = request.user
     category = request.data.get("category", "general")
-
     result = find_match_for_user(user, category)
-
     return Response(result)
 
 
 @api_view(['GET'])
 def clear_matchmaking_queues(request, categories=None, clear_user_matches=True):
-    """
-    Clears all matchmaking queues in Redis.
-    
-    categories: list of category names to clear. Defaults to ["general", "math", "science"]
-    clear_user_matches: if True, also clears user_match keys
-    """
+    """Clears all matchmaking queues in Redis."""
     if categories is None:
-        categories = ["general", "Logical Reasoning", "Biology", "Mathematics", "Chemistry", "Physics", "ECAT", "MCAT", "English"]
-
+        categories = [
+            "general", "Logical Reasoning", "Biology", "Mathematics",
+            "Chemistry", "Physics", "ECAT", "MCAT", "English",
+        ]
 
     redis_client = get_redis_connection("default")
 
-    # Clear all category queues
     for category in categories:
         queue_key = f"match_queue:{category}"
         redis_client.delete(queue_key)
-        print(f"Cleared queue: {queue_key}")
 
     if clear_user_matches:
-        # Optional: clear all user_match keys
-        # Warning: you need to know user_ids or pattern
         for key in redis_client.scan_iter("user_match:*"):
             redis_client.delete(key)
-            print(f"Cleared: {key.decode('utf-8')}")
 
-    print("cleared all queues")
     return Response({"success"})
 
 
@@ -66,9 +142,11 @@ def process_quiz_submission(request, match_id):
     except MatchPlayer.DoesNotExist:
         return Response({"error": "You are not part of this match"}, status=403)
 
+    # Get questions from match (handles both JSON string and native JSONField)
+    correct_answers = _get_match_questions(match)
+
     # If user has not submitted answers yet, submit them.
-    if mp.submitted == False or True:
-        # 1. Save player's submission
+    if not mp.submitted:
         submission = request.data.get("submission")
         time_taken = request.data.get("time_taken", 0)
 
@@ -79,31 +157,28 @@ def process_quiz_submission(request, match_id):
         mp.time_taken = float(time_taken)
         mp.submitted = True
 
-        correct_answers = json.loads(match.questions)  # stored as JSON in Match model
         def calculate_score(submission_dict):
-            """
-            submission_dict: { question_id: selected_option_index }
-            """
             score = 0
             for q in correct_answers:
                 qid = q["id"]
                 correct_ans = q["options"][q["answer"]]
-                print("correct ans", correct_ans)
-                print(type(submission_dict))
-                print((submission_dict))
-                print(qid)
                 if str(qid) in submission_dict and submission_dict[str(qid)] == correct_ans:
-                    print("correct ans")
                     score += 1
             return score
 
         mp.score = calculate_score(mp.submission)
         mp.save()
-        print(f"{request.user.username} submitted answers: {submission} score:{mp.score}")
 
-    # If already submitted, check for opponents submission status 
+        # Create QuestionAttempt records for ML tracking
+        _create_question_attempts(
+            user=request.user,
+            match=match,
+            submission=mp.submission,
+            questions=correct_answers,
+            total_time=mp.time_taken,
+        )
 
-    # 2. Get opponent MatchPlayer
+    # Get opponent MatchPlayer
     opponent = MatchPlayer.objects.filter(match=match).exclude(user=request.user).first()
 
     if not opponent:
@@ -113,11 +188,7 @@ def process_quiz_submission(request, match_id):
     if not opponent.submitted:
         return Response({"status": "waiting", "message": "Waiting for opponent..."})
 
-    # 3. If both submitted → calculate results
-
-    
-
-    # 4. Decide winner
+    # Both submitted → determine winner
     if mp.score > opponent.score:
         mp.is_winner = True
         opponent.is_winner = False
@@ -125,7 +196,7 @@ def process_quiz_submission(request, match_id):
         mp.is_winner = False
         opponent.is_winner = True
     else:
-        # tie → decide by faster time
+        # Tie → decide by faster time
         if mp.time_taken < opponent.time_taken:
             mp.is_winner = True
             opponent.is_winner = False
@@ -133,26 +204,26 @@ def process_quiz_submission(request, match_id):
             mp.is_winner = False
             opponent.is_winner = True
         else:
-            # Complete tie
             mp.is_winner = False
             opponent.is_winner = False
 
     mp.save()
     opponent.save()
 
-    # 5. Mark match complete
+    # Mark match complete
     match.is_completed = True
     match.save()
 
-    # 6. Optional ELO update
-    # update_elo(mp, opponent)
+    # Run cheating detection + update ML profiles for both players
+    _run_post_match_ml(request.user, match)
+    _run_post_match_ml(opponent.user, match)
 
-    # 7. Return result to frontend
+    # Return result to frontend
     return Response({
         "status": "completed",
         "your_score": mp.score,
         "opponent_score": opponent.score,
         "winner": mp.user.username if mp.is_winner else opponent.user.username,
         "you_won": mp.is_winner,
-        "answers": correct_answers
+        "answers": correct_answers,
     })
