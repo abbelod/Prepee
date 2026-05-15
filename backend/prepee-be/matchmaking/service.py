@@ -1,5 +1,6 @@
 import json
 import time
+import logging
 from django_redis import get_redis_connection
 from .models import Match, MatchPlayer
 from questions.models import Questions
@@ -81,6 +82,41 @@ SAMPLE_QUESTIONS = [
 
 redis = get_redis_connection("default")
 
+
+def get_questions_for_user(user, category, count=10):
+    """Fetch personalized questions using ML Hybrid Recommender."""
+    try:
+        from ml_engine.recommender import HybridRecommender
+        from ml_engine.models import Question
+
+        recommender = HybridRecommender()
+        # Recommend questions for the user
+        result = recommender.recommend(user, n=count)
+        
+        # In case we want to filter by category specifically:
+        question_ids = [item['id'] for item in result['question_ids']]
+        questions = list(Question.objects.filter(id__in=question_ids))
+
+        if not questions:
+            questions = list(Question.objects.order_by('?')[:count])
+
+        return [
+            {
+                "id": q.id,
+                "question": q.text,
+                "options": q.options,
+                "answer": q.correct_answer_index,
+                "explanation": q.explanation,
+                "category": q.subject,
+                "difficulty": q.difficulty_score,
+            }
+            for q in questions
+        ]
+    except Exception as e:
+        logger.warning(f"Failed to fetch ML questions: {e}")
+        return None
+
+
 def get_elo_range(wait_time):
     if wait_time <= 15:
         return 50
@@ -91,11 +127,11 @@ def get_elo_range(wait_time):
     else:
         return 400
 
+
 def find_match_for_user(user, category="general"):
-    redis_client = redis 
+    redis_client = redis
 
     queue_key = f"match_queue:{category}"
-    print(queue_key)
     user_match_key = f"user_match:{user.id}"
 
     all_candidates_raw = redis_client.zrange(queue_key, 0, -1)
@@ -109,14 +145,17 @@ def find_match_for_user(user, category="general"):
         match_id = int(match_id)
         match = Match.objects.get(id=match_id)
 
+        # Find opponent
+        opponent = None
         players = match.matchplayer_set.all()
         for player in players:
-            print(player.user.username)
             if player.user.username != user.username:
                 opponent = player.user
-                print(opponent.city)
-                print(opponent.username)
 
+        # Get questions — already a Python object from JSONField
+        questions = match.questions
+        if isinstance(questions, str):
+            questions = json.loads(questions)
 
         return {
             "status": "matched",
@@ -132,7 +171,6 @@ def find_match_for_user(user, category="general"):
     for item in all_candidates_raw:
         cand = json.loads(item)
         if cand["user_id"] == user.id:
-            print("User already in waiting queue")
             return {"status": "waiting"}
 
     # 3 Not matched and not in queue → add user to queue
@@ -140,11 +178,11 @@ def find_match_for_user(user, category="general"):
         "user_id": user.id,
         "elo": user.elo,
         "username": user.username,
-        "timestamp": int(time.time())
+        "timestamp": int(time.time()),
     }
 
     redis_client.zadd(queue_key, {json.dumps(user_data): user.elo})
-    print("Added user to queue")
+    logger.info(f"Added user {user.username} to queue {queue_key}")
 
     return {"status": "waiting"}
 

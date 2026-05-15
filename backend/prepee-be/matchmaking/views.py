@@ -1,11 +1,11 @@
-from django.shortcuts import render
+import logging
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from .service import find_match_for_user, generate_quiz_questions
 from django_redis import get_redis_connection
+from .service import find_match_for_user
 from .models import Match, MatchPlayer
-import json
 
 
 def parse_time_control(time_control_str):
@@ -71,32 +71,23 @@ def find_match(request):
 
 @api_view(['GET'])
 def clear_matchmaking_queues(request, categories=None, clear_user_matches=True):
-    """
-    Clears all matchmaking queues in Redis.
-    
-    categories: list of category names to clear. Defaults to ["general", "math", "science"]
-    clear_user_matches: if True, also clears user_match keys
-    """
+    """Clears all matchmaking queues in Redis."""
     if categories is None:
-        categories = ["general", "Logical Reasoning", "Biology", "Mathematics", "Chemistry", "Physics", "ECAT", "MCAT", "English"]
-
+        categories = [
+            "general", "Logical Reasoning", "Biology", "Mathematics",
+            "Chemistry", "Physics", "ECAT", "MCAT", "English",
+        ]
 
     redis_client = get_redis_connection("default")
 
-    # Clear all category queues
     for category in categories:
         queue_key = f"match_queue:{category}"
         redis_client.delete(queue_key)
-        print(f"Cleared queue: {queue_key}")
 
     if clear_user_matches:
-        # Optional: clear all user_match keys
-        # Warning: you need to know user_ids or pattern
         for key in redis_client.scan_iter("user_match:*"):
             redis_client.delete(key)
-            print(f"Cleared: {key.decode('utf-8')}")
 
-    print("cleared all queues")
     return Response({"success"})
 
 
@@ -173,11 +164,10 @@ def process_quiz_submission(request, match_id):
         
         mp.score = calculate_score(mp.submission, correct_answers)
         mp.save()
-        print(f"{request.user.username} submitted answers: {submission} score:{mp.score}")
 
     # Check for opponents submission status 
 
-    # 2. Get opponent MatchPlayer
+    # Get opponent MatchPlayer
     opponent = MatchPlayer.objects.filter(match=match).exclude(user=request.user).first()
     if not opponent:
         return Response({"error": "Opponent not found"}, status=500)
@@ -195,7 +185,7 @@ def process_quiz_submission(request, match_id):
         mp.is_winner = False
         opponent.is_winner = True
     else:
-        # tie → decide by faster time
+        # Tie → decide by faster time
         if mp.time_taken < opponent.time_taken:
             mp.is_winner = True
             opponent.is_winner = False
@@ -203,7 +193,6 @@ def process_quiz_submission(request, match_id):
             mp.is_winner = False
             opponent.is_winner = True
         else:
-            # Complete tie
             mp.is_winner = False
             opponent.is_winner = False
 
@@ -251,7 +240,7 @@ def process_quiz_submission(request, match_id):
     update_elo(mp, opponent)
         
 
-    # 7. Return result to frontend
+    # Return result to frontend
     return Response({
         "status": "completed",
         "your_score": mp.score,

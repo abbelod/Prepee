@@ -70,3 +70,12 @@ pip-delete-this-directory.txt
 ###############################
 # Backup files
 *~
+
+###############################
+# Extras Files
+implementation_plan.md
+PREPEE.txt
+Task_project_analysis.md
+FYP_ML_Presentation_Content.md
+FYP_ML_Presentation_Content.pdf
+.claude/

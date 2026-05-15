@@ -1,10 +1,12 @@
 @echo off
-echo Starting Frontend, Backend
-
+echo Starting Frontend, Backend, and Matchmaker
 
 :: Start Backend
 cd backend
 start cmd /k "call venv\Scripts\activate && cd prepee-be && python manage.py runserver"
+
+:: Start Matchmaker Worker
+start cmd /k "call venv\Scripts\activate && cd prepee-be && python manage.py run_matchmaker"
 
 cd ..
 
